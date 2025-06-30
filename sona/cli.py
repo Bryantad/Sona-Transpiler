@@ -13,7 +13,7 @@ from typing import Optional, List
 
 from .transpiler import SonaToPythonTranspiler
 from .runtime import SonaRuntime
-from .exceptions import SonaError
+from .exceptions import SonaTranspilerError
 from . import __version__
 
 
@@ -46,7 +46,7 @@ class SonaCLI:
         except FileNotFoundError:
             print(f"Error: File '{file_path}' not found.", file=sys.stderr)
             return 1
-        except SonaError as e:
+        except SonaTranspilerError as e:
             print(f"Sona Error: {e}", file=sys.stderr)
             return 1
         except Exception as e:
@@ -70,7 +70,7 @@ class SonaCLI:
         except FileNotFoundError:
             print(f"Error: File '{file_path}' not found.", file=sys.stderr)
             return 1
-        except SonaError as e:
+        except SonaTranspilerError as e:
             print(f"Sona Error: {e}", file=sys.stderr)
             return 1
         except Exception as e:
@@ -104,7 +104,7 @@ class SonaCLI:
                     result = self.runtime.execute(python_code, "<repl>")
                     if result is not None:
                         print(repr(result))
-                except SonaError as e:
+                except SonaTranspilerError as e:
                     print(f"Error: {e}")
 
             except KeyboardInterrupt:
