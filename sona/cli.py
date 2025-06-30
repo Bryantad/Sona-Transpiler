@@ -31,7 +31,12 @@ class SonaCLI:
                 source_code = f.read()
 
             # Transpile to Python
-            python_code = self.transpiler.transpile(source_code, file_path)
+            result = self.transpiler.transpile(source_code, file_path)
+            if not result["success"]:
+                print(f"Transpilation failed: {result['error']}", file=sys.stderr)
+                return 1
+
+            python_code = result["python_code"]
 
             # Save transpiled code if output path specified
             if output_path:
@@ -59,7 +64,12 @@ class SonaCLI:
             with open(file_path, 'r', encoding='utf-8') as f:
                 source_code = f.read()
 
-            python_code = self.transpiler.transpile(source_code, file_path)
+            result = self.transpiler.transpile(source_code, file_path)
+            if not result["success"]:
+                print(f"Transpilation failed: {result['error']}", file=sys.stderr)
+                return 1
+
+            python_code = result["python_code"]
 
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write(python_code)
@@ -100,10 +110,15 @@ class SonaCLI:
 
                 # Transpile and execute
                 try:
-                    python_code = self.transpiler.transpile(line, "<repl>")
-                    result = self.runtime.execute(python_code, "<repl>")
-                    if result is not None:
-                        print(repr(result))
+                    result = self.transpiler.transpile(line, "<repl>")
+                    if not result["success"]:
+                        print(f"Error: {result['error']}")
+                        continue
+
+                    python_code = result["python_code"]
+                    exec_result = self.runtime.execute(python_code, "<repl>")
+                    if exec_result is not None:
+                        print(repr(exec_result))
                 except SonaTranspilerError as e:
                     print(f"Error: {e}")
 
