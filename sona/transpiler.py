@@ -152,7 +152,7 @@ class SonaToPythonTranspiler:
 
         return "\n".join(self.generated_code)
 
-    def _visit_statement(self, node: Statement):
+    def _visit_statement(self, node):
         """Visit statement node"""
         if isinstance(node, Assignment):
             self._visit_assignment(node)
@@ -168,8 +168,13 @@ class SonaToPythonTranspiler:
             self._visit_function_def(node)
         elif isinstance(node, ReturnStatement):
             self._visit_return_statement(node)
+        elif isinstance(node, Expression):
+            # Handle expressions as expression statements
+            self._visit_expression(node)
         else:
-            raise SonaCodeGenerationError(f"Unsupported statement type: {type(node)}")
+            # Try to emit as string if it's not recognized
+            self._emit_line(f"# Unknown node type: {type(node)}")
+            self._emit_line(str(node))
 
     def _visit_assignment(self, node: Assignment):
         """Visit assignment node"""

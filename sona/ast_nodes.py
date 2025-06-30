@@ -84,6 +84,38 @@ class ASTVisitor(ABC):
     def visit_print_stmt(self, node: 'PrintStatement') -> Any:
         pass
 
+    @abstractmethod
+    def visit_array_literal(self, node: 'ArrayLiteral') -> Any:
+        pass
+
+    @abstractmethod
+    def visit_object_literal(self, node: 'ObjectLiteral') -> Any:
+        pass
+
+    @abstractmethod
+    def visit_property_access(self, node: 'PropertyAccess') -> Any:
+        pass
+
+    @abstractmethod
+    def visit_method_call(self, node: 'MethodCall') -> Any:
+        pass
+
+    @abstractmethod
+    def visit_property_assignment(self, node: 'PropertyAssignment') -> Any:
+        pass
+
+    @abstractmethod
+    def visit_for_stmt(self, node: 'ForStatement') -> Any:
+        pass
+
+    @abstractmethod
+    def visit_break_stmt(self, node: 'BreakStatement') -> Any:
+        pass
+
+    @abstractmethod
+    def visit_continue_stmt(self, node: 'ContinueStatement') -> Any:
+        pass
+
 
 # Expression nodes
 class Expression(ASTNode):
@@ -194,6 +226,34 @@ class PropertyAccess(Expression):
 
     def __str__(self) -> str:
         return f"PropertyAccess({self.object}.{self.property})"
+
+
+@dataclass
+class AttributeAccess(Expression):
+    """Attribute access (obj.attr)"""
+    object: Expression
+    attribute: str
+
+    def accept(self, visitor: ASTVisitor) -> Any:
+        return visitor.visit_attribute_access(self)
+
+    def __str__(self) -> str:
+        return f"AttributeAccess({self.object}.{self.attribute})"
+
+
+@dataclass
+class MethodCall(Expression):
+    """Method call (obj.method(args))"""
+    object: Expression
+    method: str
+    arguments: List[Expression]
+
+    def accept(self, visitor: ASTVisitor) -> Any:
+        return visitor.visit_method_call(self)
+
+    def __str__(self) -> str:
+        args_str = ", ".join(str(arg) for arg in self.arguments)
+        return f"MethodCall({self.object}.{self.method}({args_str}))"
 
 
 # Statement nodes
@@ -353,6 +413,20 @@ class ImportStatement(Statement):
         else:
             alias_str = f" as {self.alias}" if self.alias else ""
             return f"ImportStatement(import {self.module}{alias_str})"
+
+
+@dataclass
+class PropertyAssignment(Statement):
+    """Property assignment (obj.prop = value)"""
+    object: Expression
+    property: str
+    value: Expression
+
+    def accept(self, visitor: ASTVisitor) -> Any:
+        return visitor.visit_property_assignment(self)
+
+    def __str__(self) -> str:
+        return f"PropertyAssignment({self.object}.{self.property} = {self.value})"
 
 
 # Root node

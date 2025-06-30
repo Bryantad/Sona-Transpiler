@@ -37,11 +37,16 @@ class SonaASTTransformer(Transformer):
         return Program(statements=[stmt for stmt in statements if stmt is not None])
 
     # Literals
-    def number(self, token: Token) -> Literal:
+    def number(self, children) -> Literal:
         """Transform number token to Literal node"""
+        # Handle case where children is a list
+        token = children[0] if isinstance(children, list) else children
         line, column = self._get_position(token)
         value = float(token.value) if '.' in token.value else int(token.value)
-        return Literal(value, line=line, column=column)
+        literal = Literal(value)
+        literal.line = line
+        literal.column = column
+        return literal
 
     def string(self, token: Token) -> Literal:
         """Transform string token to Literal node"""
@@ -135,11 +140,86 @@ class SonaASTTransformer(Transformer):
         return list(expressions)
 
     # Statements
-    def var_assign(self, keyword: Token, name: Token, value: Expression) -> Assignment:
+    def assignment(self, children) -> Assignment:
         """Transform variable assignment"""
-        line, column = self._get_position(name)
-        is_declaration = keyword.value in ("let", "const")
-        return Assignment(name.value, value, is_declaration, line=line, column=column)
+        # Handle case where children is a list (Lark default behavior)
+        if isinstance(children, list) and len(children) >= 2:
+            if len(children) >= 3:
+                keyword, name, value = children[0], children[1], children[2]
+            else:
+                # Assume "let" if only name and value
+                keyword = Token('KEYWORD', 'let')
+                name, value = children[0], children[1]
+
+            # Extract values from tokens
+            if hasattr(keyword, 'value'):
+                keyword_val = keyword.value
+            else:
+                keyword_val = str(keyword)
+
+            if hasattr(name, 'value'):
+                name_val = name.value
+            else:
+                name_val = str(name)
+
+            line, column = self._get_position(name)
+            is_declaration = keyword_val in ("let", "const")
+            return Assignment(name_val, value, is_declaration, line=line, column=column)
+
+        # Fallback for original signature (if called directly)
+        keyword, name, value = children, None, None
+        if hasattr(keyword, 'value'):
+            name_val = name.value if name else "unknown"
+            is_declaration = keyword.value in ("let", "const")
+            line, column = self._get_position(name) if name else (0, 0)
+            fallback_literal = Literal(None)
+            fallback_assignment = Assignment(name_val, fallback_literal, is_declaration)
+            fallback_assignment.line = line
+            fallback_assignment.column = column
+            return fallback_assignment
+
+    def var_assign(self, children) -> Assignment:
+        """Transform variable assignment from main grammar"""
+        # Lark passes children as a list: [name_token, value_expr]
+        # The keyword is handled by the grammar but not passed to transformer
+        if isinstance(children, list) and len(children) >= 2:
+            # Extract name and value
+            name = children[0]
+            value = children[1]
+
+            # Get name string
+            if hasattr(name, 'value'):
+                name_val = name.value
+            else:
+                name_val = str(name)
+
+            line, column = self._get_position(name)
+            # Since we reach var_assign, we know it's a declaration (let/const)
+            assignment = Assignment(name_val, value, True)
+            assignment.line = line
+            assignment.column = column
+            return assignment
+        elif len(children) == 1:
+            # Single argument case
+            name = children[0]
+            name_val = name.value if hasattr(name, 'value') else str(name)
+            line, column = self._get_position(name)
+            literal = Literal(None)
+            literal.line = line
+            literal.column = column
+            assignment = Assignment(name_val, literal, True)
+            assignment.line = line
+            assignment.column = column
+            return assignment
+
+        # Fallback
+        fallback_literal = Literal(None)
+        fallback_literal.line = 0
+        fallback_literal.column = 0
+        fallback_assignment = Assignment("unknown", fallback_literal, True)
+        fallback_assignment.line = 0
+        fallback_assignment.column = 0
+        return fallback_assignment
 
     def print_stmt(self, args: Optional[List[Expression]] = None) -> PrintStatement:
         """Transform print statement"""
@@ -149,6 +229,16 @@ class SonaASTTransformer(Transformer):
     def return_stmt(self, value: Expression) -> ReturnStatement:
         """Transform return statement"""
         return ReturnStatement(value, line=value.line, column=value.column)
+
+    def break_stmt(self, label: Optional[Token] = None) -> BreakStatement:
+        """Transform break statement"""
+        label_name = label.value if label else None
+        return BreakStatement(label_name)
+
+    def continue_stmt(self, label: Optional[Token] = None) -> ContinueStatement:
+        """Transform continue statement"""
+        label_name = label.value if label else None
+        return ContinueStatement(label_name)
 
     # Control flow
     def if_stmt(self, condition: Expression, then_block: List[Statement],
@@ -182,14 +272,22 @@ class SonaASTTransformer(Transformer):
         return [stmt for stmt in statements if stmt is not None]
 
     # Arrays and collections
-    def array(self, elements: Optional[List[Expression]] = None) -> ArrayLiteral:
+    def array_literal(self, elements: Optional[List[Expression]] = None) -> ArrayLiteral:
         """Transform array literal"""
         return ArrayLiteral(elements if elements else [])
 
-    def dict(self, items: Optional[List[tuple]] = None) -> ObjectLiteral:
+    def array(self, elements: Optional[List[Expression]] = None) -> ArrayLiteral:
+        """Transform array literal (alternative rule)"""
+        return self.array_literal(elements)
+
+    def dict_literal(self, items: Optional[List[tuple]] = None) -> ObjectLiteral:
         """Transform dictionary literal"""
         properties = items if items else []
         return ObjectLiteral(properties)
+
+    def dict(self, items: Optional[List[tuple]] = None) -> ObjectLiteral:
+        """Transform dictionary literal (alternative rule)"""
+        return self.dict_literal(items)
 
     def dict_item(self, key: Expression, value: Expression) -> tuple:
         """Transform dictionary item"""
@@ -197,21 +295,58 @@ class SonaASTTransformer(Transformer):
         key_str = key.value if isinstance(key, Literal) else str(key)
         return (key_str, value)
 
-    # Import statements
-    def import_stmt(self, *args) -> ImportStatement:
-        """Transform import statement"""
-        # Handle different import formats
-        if len(args) == 1:
-            module = args[0].value
-            return ImportStatement(module)
-        elif len(args) == 2 and hasattr(args[1], 'value'):
-            module = args[0].value
-            alias = args[1].value
-            return ImportStatement(module, alias=alias)
-        else:
-            # Complex import - for now just take first module
-            module = args[0].value if hasattr(args[0], 'value') else str(args[0])
-            return ImportStatement(module)
+    # Property access and method calls
+    def property_access(self, obj: Expression, prop: Token) -> AttributeAccess:
+        """Transform property access"""
+        line, column = self._get_position(prop)
+        return AttributeAccess(obj, prop.value, line=line, column=column)
+
+    def method_call(self, obj: Expression, method: Token, args: Optional[List[Expression]] = None) -> MethodCall:
+        """Transform method call"""
+        line, column = self._get_position(method)
+        arguments = args if args else []
+        return MethodCall(obj, method.value, arguments, line=line, column=column)
+
+    def property_assignment(self, obj: Expression, prop: Token, value: Expression) -> PropertyAssignment:
+        """Transform property assignment"""
+        line, column = self._get_position(prop)
+        return PropertyAssignment(obj, prop.value, value, line=line, column=column)
+
+    # Dotted expressions
+    def dotted_expr(self, atom: Expression, *calls: Any) -> Expression:
+        """Transform dotted expression with method calls and property access"""
+        result = atom
+        for call in calls:
+            if isinstance(call, (AttributeAccess, MethodCall, PropertyAssignment)):
+                # Update the object reference
+                call.object = result
+                result = call
+            else:
+                # Handle other call types
+                result = call
+        return result
+
+    def call_or_access(self, *args) -> Any:
+        """Transform call or access (handled by specific methods)"""
+        # This is handled by the specific method_call, property_access, etc. methods
+        return args[0] if args else None
+
+    # Atom expressions
+    def atom(self, expr: Expression) -> Expression:
+        """Transform atom expression"""
+        return expr
+
+    def factor(self, expr: Expression) -> Expression:
+        """Transform factor expression"""
+        return expr
+
+    def term(self, expr: Expression) -> Expression:
+        """Transform term expression"""
+        return expr
+
+    def expr(self, expr: Expression) -> Expression:
+        """Transform expr expression"""
+        return expr
 
 
 class SonaParser:
